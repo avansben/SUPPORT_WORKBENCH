@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Scaffold a case directory from templates/.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ $# -ne 1 ]; then
+  echo "usage: bin/new-case <slug>" >&2
+  exit 2
+fi
+
+slug="$(printf '%s' "$1" | tr '[:upper:] _' '[:lower:]--' | tr -cd 'a-z0-9-')"
+date="$(date +%Y-%m-%d)"
+dir="$root/cases/$date-$slug"
+
+if [ -e "$dir" ]; then
+  echo "already exists: $dir" >&2
+  exit 1
+fi
+
+mkdir -p "$dir"
+for t in case next-steps customer-reply escalation; do
+  sed -e "s/{{SLUG}}/$slug/g" -e "s/{{DATE}}/$date/g" "$root/templates/$t.md" > "$dir/$t.md"
+done
+
+echo "cases/$date-$slug"

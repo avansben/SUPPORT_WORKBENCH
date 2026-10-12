@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Run a command and record its output as evidence for a case.
+#   bin/ev [--allow-write] <case-dir> <command> [args…]
+# The command runs from the current directory. Output (stdout+stderr) is shown
+# and saved to <case-dir>/evidence/NNN-<name>.txt, and a row is added to INDEX.md.
+set -uo pipefail
+
+allow_write=0
+if [ "${1:-}" = "--allow-write" ]; then
+  allow_write=1
+  shift
+fi
+
+if [ $# -lt 2 ]; then
+  echo "usage: bin/ev [--allow-write] <case-dir> <command> [args…]" >&2
+  exit 2
+fi
+
+case_dir="${1%/}"
+shift
+ev_dir="$case_dir/evidence"
+if [ ! -f "$case_dir/case.md" ]; then
+  echo "not a case directory (no case.md): $case_dir" >&2
+  exit 2
+fi
+mkdir -p "$ev_dir"
+
+# Tripwire, not a sandbox: stop and think before anything that changes state.
+if [ "$allow_write" -eq 0 ]; then
+  risky='(^|[^[:alnum:]_-])(rm|rmdir|mv|dd|truncate|chmod|chown|kill|pkill|killall|shutdown|reboot|restart|reload|drop|delete|update|insert|alter|apply|deploy|push|install|uninstall)([^[:alnum:]_-]|$)'
+  if printf '%s' "$*" | grep -qiE "$risky|--force|-X *(POST|PUT|PATCH|DELETE)|>[^&]"; then
+    echo "ev: this looks like it changes state:" >&2
+    echo "    $*" >&2
+    echo "ev: if that is intended and approved, re-run with --allow-write" >&2
+    exit 3
+  fi
+fi
+
+n=$(find "$ev_dir" -maxdepth 1 -name '[0-9][0-9][0-9]-*.txt' | wc -l | tr -d ' ')
+num=$(printf '%03d' $((n + 1)))
+name="$(basename "$1" | tr -cd '[:alnum:]._-')"
+file="$ev_dir/$num-$name.txt"
+when="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+{
+  echo "# command: $*"
+  echo "# cwd:     $PWD"
+  echo "# time:    $when"
+  echo "# ---"
+} > "$file"
+
+"$@" 2>&1 | tee -a "$file"
+status=${PIPESTATUS[0]}
+
+echo "# --- exit: $status" >> "$file"
+[ -f "$ev_dir/INDEX.md" ] || printf '# Evidence index\n\n| # | Time (UTC) | Exit | Command | File |\n|---|---|---|---|---|\n' > "$ev_dir/INDEX.md"
+cmd_md="$(printf '%s' "$*" | sed 's/|/\\|/g')"
+echo "| $num | $when | $status | \`$cmd_md\` | $(basename "$file") |" >> "$ev_dir/INDEX.md"
+
+echo "ev: saved $file (exit $status)" >&2
+exit "$status"

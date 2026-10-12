@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Real cases stay local; only the framework is tracked
+cases/*
+!cases/.gitkeep
